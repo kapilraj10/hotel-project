@@ -41,19 +41,32 @@ switch ($range) {
         }
 }
 
-$stmt = $pdo->prepare('SELECT * FROM orders WHERE order_date >= ? ORDER BY order_date DESC');
-$stmt->execute([$start]);
-$orders = $stmt->fetchAll();
-
+// For today range, match DATE(order_date)=CURDATE() to return only today's orders.
 $rows = [];
+$total_sum = 0.0;
+$order_count = 0;
+if ($range === 'today') {
+    $stmt = $pdo->prepare('SELECT * FROM orders WHERE DATE(order_date) = CURDATE() ORDER BY order_date DESC');
+    $stmt->execute();
+    $orders = $stmt->fetchAll();
+    $order_count = count($orders);
+} else {
+    $stmt = $pdo->prepare('SELECT * FROM orders WHERE order_date >= ? ORDER BY order_date DESC');
+    $stmt->execute([$start]);
+    $orders = $stmt->fetchAll();
+    $order_count = count($orders);
+}
+
 foreach ($orders as $o) {
     $items = [];
     try { $items = json_decode($o['items_json'], true) ?: []; } catch (Throwable $e) { $items = []; }
     if (empty($items)) {
         // fallback: create a single row with generic info
+        $price = (float)($o['total_amount'] ?? 0);
+        $total_sum += $price;
         $rows[] = [
             'item_name' => '(no items)',
-            'price' => number_format((float)$o['total_amount'],2,'.',''),
+            'price' => number_format($price,2,'.',''),
             'status' => $o['status'],
             'payment_method' => $o['payment_method'],
             'qty' => 1,
@@ -63,6 +76,8 @@ foreach ($orders as $o) {
         ];
     } else {
         foreach ($items as $it) {
+            $price = (float)($it['price'] ?? 0) * ((int)($it['qty'] ?? 1));
+            $total_sum += $price;
             $rows[] = [
                 'item_name' => $it['name'] ?? ($it['id'] ?? 'Item'),
                 'price' => number_format((float)($it['price'] ?? 0),2,'.',''),
@@ -77,5 +92,11 @@ foreach ($orders as $o) {
     }
 }
 
-echo json_encode(array_values($rows));
+$out = [
+    'rows' => array_values($rows),
+    'order_count' => $order_count,
+    'total' => number_format($total_sum,2,'.','')
+];
+
+echo json_encode($out);
 

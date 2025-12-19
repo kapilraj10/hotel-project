@@ -57,6 +57,5 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX idx_items_category ON items(category_id);
 CREATE INDEX idx_orders_status ON orders(status);
 
--- Insert default admin (username: admin, password: admin123)
-INSERT INTO admins (username, password) VALUES ('admin', '$2y$10$jlzsS8e98J7aIEST2BNzDOEEx8DWNBjPIR0plMOzv654rLu4aVa9a')
+INSERT INTO superadmin (username, password) VALUES ('kapil', '$2y$10$jlzsS8e98J7aIEST2BNzDOEEx8DWNBjPIR0plMOzv654rLu4aVa9a')
 ON DUPLICATE KEY UPDATE username=VALUES(username);

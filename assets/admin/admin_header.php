@@ -384,18 +384,21 @@
           <span class="menu-text">Tables</span>
         </a>
       </li>
+      <?php if (function_exists('admin_has_role') && (admin_has_role('superadmin') || (isset($_SESSION['admin_permissions']) && stripos($_SESSION['admin_permissions'], 'view_users') !== false))): ?>
       <li>
         <a href="users.php" class="<?= $current=='users.php' ? 'active' : '' ?>">
           <span class="icon"><i class="fas fa-users"></i></span>
           <span class="menu-text">Users</span>
         </a>
       </li>
+      <?php endif; ?>
       <li>
         <a href="admins.php" class="<?= $current=='admins.php' ? 'active' : '' ?>">
           <span class="icon"><i class="fas fa-user-shield"></i></span>
           <span class="menu-text">Admins</span>
         </a>
       </li>
+      
       <li>
         <a href="orders.php" class="<?= $current=='orders.php' ? 'active' : '' ?>">
           <span class="icon"><i class="fas fa-receipt"></i></span>

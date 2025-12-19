@@ -39,15 +39,40 @@ switch ($range) {
         }
 }
 
-// Try to query bookings; use created_at (exists in bookings schema) for filtering
+// Try to query bookings; be resilient to different date column names (created_at, booking_date, checkin, booking_on, date)
 $debug = !empty($_GET['debug']);
 $bookings = [];
+$total_sum = 0.0;
+// Try a sequence of likely date columns until we find rows or exhaust the list.
+$dateCols = ['created_at', 'booking_date', 'booking_on', 'checkin', 'date'];
 try {
-    $sql = "SELECT b.* , t.table_number FROM bookings b LEFT JOIN tables_info t ON b.room_id=t.id WHERE b.created_at >= ? ORDER BY b.created_at DESC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$start]);
-    $bookings = $stmt->fetchAll();
-    // if debug and still empty, try returning some rows to inspect structure
+    foreach ($dateCols as $col) {
+        try {
+            if ($range === 'today') {
+                // For today's view, match the DATE() exactly to avoid future rows
+                $sql = "SELECT b.* , t.table_number FROM bookings b LEFT JOIN tables_info t ON b.room_id=t.id WHERE DATE(b." . $col . ") = CURDATE() ORDER BY b." . $col . " DESC";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute();
+            } else {
+                $sql = "SELECT b.* , t.table_number FROM bookings b LEFT JOIN tables_info t ON b.room_id=t.id WHERE b." . $col . " >= ? ORDER BY b." . $col . " DESC";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([$start]);
+            }
+            $rows = $stmt->fetchAll();
+            if (!empty($rows)) {
+                $bookings = $rows;
+                break;
+            }
+        } catch (Throwable $__e) {
+            // Column might not exist or query failed for this column — try next
+            if ($debug) {
+                // ignore errors but continue trying other columns
+            }
+            continue;
+        }
+    }
+
+    // If still empty and debug requested, return a small sample to inspect structure
     if ($debug && empty($bookings)) {
         try {
             $all = $pdo->query("SELECT b.* , t.table_number FROM bookings b LEFT JOIN tables_info t ON b.room_id=t.id LIMIT 50");
@@ -78,6 +103,11 @@ foreach ($bookings as $b) {
     }
     if ($amount === null && isset($b['amount'])) $amount = $b['amount'];
 
+    // accumulate total_sum as float for accurate summation
+    if ($amount !== null) {
+        $total_sum += (float)$amount;
+    }
+
     $rows[] = [
         'id' => $b['id'] ?? null,
         'guest' => $b['customer_name'] ?? $b['guest_name'] ?? $b['name'] ?? '',
@@ -90,5 +120,11 @@ foreach ($bookings as $b) {
     ];
 }
 
-echo json_encode(array_values($rows));
+$out = [
+    'rows' => array_values($rows),
+    'total' => number_format($total_sum,2,'.','')
+];
+
+// For backward compatibility, if debug=true and consumer expects raw array, still output the object — callers should handle both.
+echo json_encode($out);
 

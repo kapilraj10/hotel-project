@@ -37,10 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           id INT AUTO_INCREMENT PRIMARY KEY,
           username VARCHAR(100) NOT NULL UNIQUE,
           password VARCHAR(255) NOT NULL,
+          role VARCHAR(50) DEFAULT 'admin',
+          permissions TEXT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $ast = $pdo->prepare('INSERT INTO admins (username,password) VALUES (?,?) ON DUPLICATE KEY UPDATE password=VALUES(password)');
-        $ast->execute([$email, $hash]);
+        $ast = $pdo->prepare('INSERT INTO admins (username,password,role) VALUES (?,?,?) ON DUPLICATE KEY UPDATE password=VALUES(password), role=VALUES(role)');
+        $ast->execute([$email, $hash, 'admin']);
       }
       header('Location: users.php'); exit;
         } catch (PDOException $ex) {

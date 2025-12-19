@@ -29,7 +29,6 @@ try {
     <h3>Tables</h3>
     <div>
       <a class="btn btn-primary me-2" href="table_add.php">Add Table</a>
-      <a class="btn btn-outline-primary" href="crearoom.php">Create Room</a>
     </div>
 </div>
 <div class="row g-3">
@@ -39,12 +38,10 @@ try {
                 <?php if (!empty($t['image_path'])): ?><img src="<?=htmlspecialchars($t['image_path'])?>" class="card-img-top" style="height:160px;object-fit:cover"><?php endif; ?>
                 <div class="card-body">
                     <h5 class="card-title"><?=htmlspecialchars($t['table_number'] ?? '')?> <small class="text-muted"><?=htmlspecialchars($t['table_type'] ?? '')?></small></h5>
-                    <?php if (isset($t['price'])): ?><p class="mb-1">Price: $<?=number_format((float)($t['price'] ?? 0),2)?></p><?php endif; ?>
                     <?php if (isset($t['capacity'])): ?><p class="mb-1">Capacity: <?=htmlspecialchars($t['capacity'] ?? '')?> &middot; Bed: <?=htmlspecialchars($t['bed_type'] ?? '')?></p><?php endif; ?>
                     <p class="card-text"><?=htmlspecialchars($t['status'] ?? '')?></p>
                     <div class="mt-2">
                         <a class="btn btn-sm btn-secondary" href="table_edit.php?id=<?=$t['id']?>">Edit</a>
-                        <a class="btn btn-sm btn-primary ms-1" href="booking_add.php?room_id=<?=$t['id']?>">Book</a>
                         <a class="btn btn-sm btn-danger ms-1" href="table_delete.php?id=<?=$t['id']?>" onclick="return confirm('Delete table?')">Delete</a>
                     </div>
                 </div>

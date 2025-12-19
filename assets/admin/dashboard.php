@@ -2,9 +2,107 @@
 // Admin header: includes navbar and starts layout with sidebar column
 require_once __DIR__ . '/../auth.php';
 require_admin();
+
 // helper to format numbers as Nepali rupee (Rupee sign "रू")
 function format_npr($amount) {
   return 'रू ' . number_format((float)$amount, 2);
+}
+
+// Helper function to safely get column sum
+function safe_column_sum($pdo, $table, $column, $where = '') {
+  try {
+    $sql = "SELECT COALESCE(SUM($column), 0) FROM $table";
+    if ($where) {
+      $sql .= " WHERE $where";
+    }
+    $stmt = $pdo->query($sql);
+    return (float)$stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return 0.00;
+  }
+}
+
+// Helper function to safely count rows
+function safe_count($pdo, $table, $where = '') {
+  try {
+    $sql = "SELECT COUNT(*) FROM $table";
+    if ($where) {
+      $sql .= " WHERE $where";
+    }
+    $stmt = $pdo->query($sql);
+    return (int)$stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return 0;
+  }
+}
+
+// Helper function to check if table exists
+function table_exists($pdo, $table_name) {
+  try {
+    $result = $pdo->query("SELECT 1 FROM $table_name LIMIT 1");
+    return true;
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
+// Helper to get bookings revenue properly
+function get_bookings_revenue($pdo, $date_condition = '', $status_condition = "status='Completed'") {
+  $revenue = 0.00;
+  
+  if (!table_exists($pdo, 'bookings')) {
+    return $revenue;
+  }
+  
+  try {
+    // Build where clause
+    $where = '';
+    if ($status_condition) {
+      $where = " WHERE $status_condition";
+    }
+    if ($date_condition) {
+      $where .= ($where ? " AND " : " WHERE ") . $date_condition;
+    }
+    
+    // Try to get total_amount column first
+    $revenue = safe_column_sum($pdo, 'bookings', 'total_amount', 
+      str_replace('WHERE ', '', $where));
+    
+    // If no total_amount, try amount column
+    if ($revenue == 0) {
+      $revenue = safe_column_sum($pdo, 'bookings', 'amount', 
+        str_replace('WHERE ', '', $where));
+    }
+    
+    // If still no revenue, calculate from price_per_night
+    if ($revenue == 0) {
+      try {
+        $sql = "SELECT price_per_night, checkin, checkout FROM bookings";
+        if ($where) {
+          $sql .= $where;
+        }
+        $stmt = $pdo->query($sql);
+        $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($bookings as $booking) {
+          if (!empty($booking['price_per_night']) && 
+              !empty($booking['checkin']) && 
+              !empty($booking['checkout'])) {
+            $checkin = new DateTime($booking['checkin']);
+            $checkout = new DateTime($booking['checkout']);
+            $nights = $checkin->diff($checkout)->days;
+            $nights = max(1, $nights);
+            $revenue += $booking['price_per_night'] * $nights;
+          }
+        }
+      } catch (Throwable $e) {
+        // Silently fail
+      }
+    }
+  } catch (Throwable $e) {
+    // Silently handle errors
+  }
+  
+  return $revenue;
 }
 ?>
 <!doctype html>
@@ -41,6 +139,7 @@ function format_npr($amount) {
       background-color: #f8fafc;
       color: var(--text-dark);
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
     }
 
     /* Top navbar */
@@ -140,6 +239,7 @@ function format_npr($amount) {
       justify-content: center;
       color: var(--primary-color);
       transition: all 0.3s;
+      cursor: pointer;
     }
 
     .sidebar-toggle-btn:hover {
@@ -220,6 +320,7 @@ function format_npr($amount) {
       color: var(--danger-color);
       font-weight: 500;
       transition: all 0.2s;
+      cursor: pointer;
     }
 
     .logout-btn:hover {
@@ -286,6 +387,7 @@ function format_npr($amount) {
       border-left: 4px solid var(--primary-color);
       position: relative;
       overflow: hidden;
+      cursor: pointer;
     }
 
     .stat-card:hover {
@@ -308,6 +410,13 @@ function format_npr($amount) {
     .stat-card h3 {
       font-size: 2.2rem;
       font-weight: 800;
+      margin: 10px 0 0;
+      color: var(--text-dark);
+    }
+
+    .stat-card h4 {
+      font-size: 1.5rem;
+      font-weight: 700;
       margin: 10px 0 0;
       color: var(--text-dark);
     }
@@ -345,6 +454,12 @@ function format_npr($amount) {
       margin: 0;
     }
 
+    .section-header h6 {
+      color: var(--text-dark);
+      font-weight: 600;
+      margin: 15px 0 10px;
+    }
+
     .total-amount {
       background: var(--primary-light);
       color: var(--primary-color);
@@ -352,6 +467,67 @@ function format_npr($amount) {
       border-radius: 20px;
       font-weight: 700;
       font-size: 1.1rem;
+    }
+
+    /* Table styles */
+    .table-responsive {
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+
+    .table {
+      margin-bottom: 0;
+    }
+
+    .table thead th {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 12px 16px;
+      font-weight: 600;
+    }
+
+    .table tbody td {
+      padding: 12px 16px;
+      vertical-align: middle;
+    }
+
+    .table-striped tbody tr:nth-of-type(odd) {
+      background-color: var(--bg-light);
+    }
+
+    .table-striped tbody tr:hover {
+      background-color: rgba(124, 58, 237, 0.05);
+    }
+
+    /* Button styles */
+    .btn-group-sm .btn {
+      padding: 4px 12px;
+      font-size: 0.875rem;
+    }
+
+    .btn-outline-secondary.active {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      color: white;
+    }
+
+    .badge-count {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+    }
+
+    /* Alert styles */
+    .alert {
+      border-radius: var(--radius-sm);
+      border: none;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+    }
+
+    .btn-close:focus {
+      box-shadow: none;
     }
 
     /* Responsive */
@@ -372,6 +548,18 @@ function format_npr($amount) {
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
       }
+
+      .dashboard-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: flex-start;
+      }
+
+      .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+      }
     }
 
     @media (max-width: 768px) {
@@ -381,6 +569,29 @@ function format_npr($amount) {
 
       .main-content {
         padding: 20px;
+      }
+
+      #revenueRangeCards .col-auto {
+        width: 100%;
+      }
+
+      .btn-group-sm {
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 576px) {
+      .top-navbar {
+        padding: 0 1rem;
+      }
+
+      .user-info span {
+        display: none;
+      }
+
+      .welcome-message {
+        font-size: 0.8rem;
+        padding: 6px 12px;
       }
     }
 
@@ -413,11 +624,6 @@ function format_npr($amount) {
     ::-webkit-scrollbar-thumb:hover {
       background: #6d28d9;
     }
-    /* Reports UI tweaks */
-    .report-controls { display:flex; gap:0.5rem; align-items:center; }
-    .report-controls .form-control-sm { min-width:160px; }
-    #ordersTable tbody tr:hover { background: rgba(124,58,237,0.03); }
-    .badge-count { font-size:0.75rem; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -491,7 +697,7 @@ function format_npr($amount) {
           <span class="menu-text">Bookings</span>
         </a>
       </li>
-      <li >
+      <li>
         <a href="users.php" class="<?= $current=='users.php' ? 'active' : '' ?>">
           <span class="icon"><i class="fas fa-users"></i></span>
           <span class="menu-text">Users</span>
@@ -527,87 +733,118 @@ function format_npr($amount) {
       <?php
       require_once __DIR__ . '/../db_rest.php';
       $pdo = get_rest_db();
-
-      // Metrics
-      $total_categories = $pdo->query('SELECT COUNT(*) FROM categories')->fetchColumn();
-      $total_items = $pdo->query('SELECT COUNT(*) FROM items')->fetchColumn();
-      $total_tables = $pdo->query('SELECT COUNT(*) FROM tables_info')->fetchColumn();
-  // bookings count (safe if table missing)
-  try { $total_bookings = (int)$pdo->query("SELECT COUNT(*) FROM bookings")->fetchColumn(); } catch (Throwable $e) { $total_bookings = 0; }
-      $pending_orders = $pdo->query("SELECT COUNT(*) FROM orders WHERE status='Pending'")->fetchColumn();
-      $completed_orders = $pdo->query("SELECT COUNT(*) FROM orders WHERE status='Completed'")->fetchColumn();
-      $total_revenue = $pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE status='Completed'")->fetchColumn();
-      // Include bookings revenue if bookings table exists (try common column names)
-      try {
-        $b_total = 0;
-        // try several common column names
-        $tryCols = ['total_amount','amount','checkout_price','price'];
-        foreach ($tryCols as $col) {
-          try {
-            $q = $pdo->query("SELECT COALESCE(SUM($col),0) FROM bookings WHERE status='Completed'");
-            if ($q) {
-              $b_total = (float)$q->fetchColumn();
-              if ($b_total > 0) break;
-            }
-          } catch (Throwable $e) { /* ignore and try next */ }
-        }
-      } catch (Throwable $e) { $b_total = 0; }
-      $total_revenue = (float)$total_revenue + (float)$b_total;
-      // Today's orders and bookings counts
-      try {
-        $today_orders_count = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE DATE(order_date)=CURDATE()")->fetchColumn();
-      } catch (Throwable $e) { $today_orders_count = 0; }
-      try {
-        $today_bookings_count = (int)$pdo->query("SELECT COUNT(*) FROM bookings WHERE DATE(created_at)=CURDATE()")->fetchColumn();
-      } catch (Throwable $e) { $today_bookings_count = 0; }
-      // Today's revenue (completed orders today)
-      try {
-        $today_revenue = $pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE DATE(order_date)=CURDATE() AND status='Completed'")->fetchColumn();
-      } catch (Throwable $e) {
-        $today_revenue = 0;
+      
+      // Set timezone for date calculations
+      date_default_timezone_set('Asia/Kathmandu');
+      $today = date('Y-m-d');
+      
+      // Basic counts
+      $total_categories = safe_count($pdo, 'categories');
+      $total_items = safe_count($pdo, 'items');
+      $total_tables = safe_count($pdo, 'tables_info');
+      
+      // Rooms count
+      $total_rooms = 0;
+      if (table_exists($pdo, 'rooms')) {
+        $total_rooms = safe_count($pdo, 'rooms');
       }
-      // Add today's bookings revenue if present
-      try {
-        // Prefer bookings recorded today (created_at), fallback to booking_date/checkin
-        $b_today = 0;
-        // First try sum of total_amount for bookings created today
-        try {
-          $q = $pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM bookings WHERE DATE(created_at)=CURDATE() AND status='Completed'");
-          if ($q) $b_today = (float)$q->fetchColumn();
-        } catch (Throwable $__e) { $b_today = 0; }
+      
+      // Order statistics
+      $pending_orders = safe_count($pdo, 'orders', "status='Pending'");
+      $completed_orders = safe_count($pdo, 'orders', "status='Completed'");
+      
+      // Today's orders count (all orders today regardless of status)
+      $today_orders_count = safe_count($pdo, 'orders', "DATE(order_date) = '$today'");
+      
+      // Today's orders revenue (sum of all orders for today)
+      $today_orders_revenue = safe_column_sum($pdo, 'orders', 'total_amount', 
+        "DATE(order_date) = '$today'");
 
-        // If no total_amounts recorded, try to compute from price_per_night * nights for bookings created today
-        if (empty($b_today)) {
+      // Total orders revenue (SUM of all orders regardless of status)
+      $total_orders_revenue = safe_column_sum($pdo, 'orders', 'total_amount');
+      
+      // Bookings calculations
+      $total_bookings = 0;
+      $today_bookings_count = 0;
+      $today_bookings_revenue = 0;
+      $total_bookings_revenue = 0;
+      
+      if (table_exists($pdo, 'bookings')) {
+        $total_bookings = safe_count($pdo, 'bookings');
+        
+        // Today's bookings count (trying different date columns)
+        $date_columns = ['created_at', 'booking_date', 'checkin', 'date'];
+        $detected_booking_date_col = null;
+        foreach ($date_columns as $col) {
           try {
-            $q2 = $pdo->query("SELECT COALESCE(SUM(price_per_night * GREATEST(DATEDIFF(checkout, checkin),1)),0) FROM bookings WHERE DATE(created_at)=CURDATE() AND status='Completed'");
-            if ($q2) $b_today = (float)$q2->fetchColumn();
-          } catch (Throwable $__e) { /* ignore */ }
+            $count = safe_count($pdo, 'bookings', "DATE($col) = '$today'");
+            if ($count > 0) {
+              $today_bookings_count = $count;
+              $detected_booking_date_col = $col;
+              break;
+            }
+          } catch (Throwable $e) {
+            continue;
+          }
         }
 
-        // As a last fallback, check rows where checkin/checkout equals today (occupied/checkout today)
-        if (empty($b_today)) {
-          try {
-            $q3 = $pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM bookings WHERE (DATE(checkin)=CURDATE() OR DATE(checkout)=CURDATE()) AND status='Completed'");
-            if ($q3) $b_today = (float)$q3->fetchColumn();
-          } catch (Throwable $__e) { }
+        // Today's bookings revenue: use detected date column if available,
+        // and include all bookings (no status filter) when computing today's revenue.
+        if ($detected_booking_date_col) {
+          $today_bookings_revenue = get_bookings_revenue($pdo, "DATE($detected_booking_date_col) = '$today'", '');
+        } else {
+          // Fallback: try common columns and pick the first non-zero revenue
+          foreach ($date_columns as $col) {
+            try {
+              $revenue = get_bookings_revenue($pdo, "DATE($col) = '$today'", '');
+              if ($revenue > 0) {
+                $today_bookings_revenue = $revenue;
+                break;
+              }
+            } catch (Throwable $e) {
+              continue;
+            }
+          }
         }
-      } catch (Throwable $e) { $b_today = 0; }
-      $today_revenue = (float)$today_revenue + (float)$b_today;
-  // expose today's bookings revenue separately
-  $today_bookings_revenue = (float)$b_today;
-
-      // Simple daily sales for last 7 days
-      $stmt = $pdo->prepare("SELECT DATE(order_date) as d, COALESCE(SUM(total_amount),0) as s FROM orders WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(order_date) ORDER BY DATE(order_date)");
-      $stmt->execute();
-      $rows = $stmt->fetchAll();
-      $labels = [];$data = [];
-      $map = [];
-      foreach ($rows as $r) { $map[$r['d']] = $r['s']; }
-      for ($i=6;$i>=0;$i--) { $d = date('Y-m-d', strtotime("-{$i} days")); $labels[] = $d; $data[] = isset($map[$d]) ? (float)$map[$d] : 0; }
+        
+  // Total bookings revenue (SUM of all bookings regardless of status)
+  $total_bookings_revenue = get_bookings_revenue($pdo, '', '');
+      }
+      
+      // Calculate totals
+      $today_revenue = $today_orders_revenue + $today_bookings_revenue;
+      $total_revenue = $total_orders_revenue + $total_bookings_revenue;
+      
+      // Sales chart data for last 7 days
+      $labels = [];
+      $data = [];
+      
+      for ($i = 6; $i >= 0; $i--) {
+        $date = date('Y-m-d', strtotime("-$i days"));
+        $labels[] = $date;
+        
+        // Get daily orders revenue
+        $daily_revenue = safe_column_sum($pdo, 'orders', 'total_amount', 
+          "DATE(order_date) = '$date' AND status='Completed'");
+        
+        // Add daily bookings revenue if available
+        if (table_exists($pdo, 'bookings')) {
+          $daily_bookings_revenue = get_bookings_revenue($pdo, "DATE(created_at) = '$date'");
+          $daily_revenue += $daily_bookings_revenue;
+        }
+        
+        $data[] = $daily_revenue;
+      }
+      // Compute 7-day total (sum of the last 7 days shown in the chart)
+      $seven_day_total = 0.0;
+      foreach ($data as $v) { $seven_day_total += (float)$v; }
       ?>
 
       <?php if (!empty($_GET['order_created'])): ?>
-        <div class="alert alert-success">Order #<?=htmlspecialchars((int)$_GET['order_created'])?> created successfully.</div>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          Order #<?=htmlspecialchars((int)$_GET['order_created'])?> created successfully.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
       <?php endif; ?>
 
       <div class="dashboard-header">
@@ -616,11 +853,13 @@ function format_npr($amount) {
           <div class="text-muted small">Welcome to your hotel management dashboard</div>
         </div>
         <div class="d-flex align-items-center gap-3">
-          <a href="bookings.php" class="btn btn-outline-primary">
-            <i class="fas fa-bed me-1"></i>
-            Bookings
-            <?php if(!empty($total_bookings)): ?> <span class="badge bg-info text-dark ms-2"><?php echo $total_bookings; ?></span><?php endif; ?>
-          </a>
+          <?php if ($total_bookings > 0): ?>
+            <a href="bookings.php" class="btn btn-outline-primary">
+              <i class="fas fa-bed me-1"></i>
+              Bookings
+              <span class="badge bg-info text-dark ms-2"><?php echo $total_bookings; ?></span>
+            </a>
+          <?php endif; ?>
           <div class="welcome-message">
             <i class="fas fa-calendar-alt"></i>
             <?php echo date('F j, Y'); ?>
@@ -629,53 +868,54 @@ function format_npr($amount) {
       </div>
 
       <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card" onclick="window.location.href='categories.php'">
           <small><i class="fas fa-folder me-2"></i>Categories</small>
           <h3><?php echo $total_categories; ?></h3>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" onclick="window.location.href='items.php'">
           <small><i class="fas fa-utensils me-2"></i>Menu Items</small>
           <h3><?php echo $total_items; ?></h3>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" onclick="window.location.href='tables.php'">
           <small><i class="fas fa-chair me-2"></i>Tables</small>
           <h3><?php echo $total_tables; ?></h3>
         </div>
-          <a href="rooms.php" style="text-decoration:none">
-          <div class="stat-card" style="border-left-color: var(--danger-color);">
+        <?php if ($total_rooms > 0): ?>
+          <div class="stat-card" onclick="window.location.href='rooms.php'" style="border-left-color: var(--danger-color);">
             <small><i class="fas fa-door-open me-2"></i>Rooms</small>
-            <h3><?php echo (int)($pdo->query('SELECT COUNT(*) FROM rooms')->fetchColumn() ?? 0); ?></h3>
+            <h3><?php echo $total_rooms; ?></h3>
           </div>
-          </a>
-        <div class="stat-card">
+        <?php endif; ?>
+        <div class="stat-card" onclick="window.location.href='orders.php?status=Pending'">
           <small><i class="fas fa-clock me-2"></i>Pending Orders</small>
           <h3><?php echo $pending_orders; ?></h3>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" onclick="window.location.href='orders.php'">
           <small><i class="fas fa-receipt me-2"></i>Today's Orders</small>
-          <h3><?php echo (int)$today_orders_count; ?></h3>
+          <h3 id="todayOrdersCount"><?php echo $today_orders_count; ?></h3>
         </div>
+        <?php if (table_exists($pdo, 'bookings')): ?>
+          <div class="stat-card" onclick="window.location.href='bookings.php'">
+            <small><i class="fas fa-bed me-2"></i>Today's Bookings</small>
+            <h3 id="todayBookingsCount"><?php echo $today_bookings_count; ?></h3>
+          </div>
+        <?php endif; ?>
         <div class="stat-card">
-          <small><i class="fas fa-bed me-2"></i>Today's Bookings</small>
-          <h3><?php echo (int)$today_bookings_count; ?></h3>
-        </div>
-         <div class="stat-card">
           <small><i class="fas fa-sun me-2"></i>Today's Revenue</small>
           <h3><?php echo format_npr($today_revenue); ?></h3>
         </div>
-        <div class="stat-card">
-          <small><i class="fas fa-dollar-sign me-2"></i>Today's Bookings Rev</small>
-          <h3><?php echo format_npr($today_bookings_revenue); ?></h3>
-        </div>
+        <?php if (table_exists($pdo, 'bookings') && $today_bookings_revenue > 0): ?>
+          <div class="stat-card">
+            <small><i class="fas fa-dollar-sign me-2"></i>Today's Bookings Rev</small>
+            <h3 id="todayBookingsRevenue"><?php echo format_npr($today_bookings_revenue); ?></h3>
+          </div>
+        <?php endif; ?>
       </div>
 
       <div class="chart-section">
         <div class="section-header">
-          <h5>Sales Trend (Last 7 Days)</h5>
-          <div class="total-amount">
-            <i class="fas fa-money-bill-wave me-1"></i>
-            Total: <?php echo format_npr($total_revenue); ?>
-          </div>
+          <h3 class="h5">Orders in Last 7 Days</h3>
+          <div class="total-amount"><?php echo format_npr($seven_day_total); ?></div>
         </div>
         <div style="height: 320px;">
           <canvas id="salesChart" style="width:100%; height:100%"></canvas>
@@ -725,7 +965,7 @@ function format_npr($amount) {
       <!-- Additional stats row -->
       <div class="row mt-4">
         <div class="col-md-6">
-          <div class="stat-card">
+          <div class="stat-card" onclick="window.location.href='orders.php?status=Completed'">
             <small><i class="fas fa-check-circle me-2"></i>Completed Orders</small>
             <h3><?php echo $completed_orders; ?></h3>
           </div>
@@ -738,60 +978,70 @@ function format_npr($amount) {
         </div>
       </div>
 
-        <!-- Reports Section: Orders & Rooms -->
-        <div class="chart-section mt-4">
-          <div class="section-header">
-            <h5>Reports</h5>
-            <div class="d-flex gap-2 align-items-center">
-              <div class="btn-group btn-group-sm" role="group" aria-label="Date ranges" id="rangeButtons">
-                <button class="btn btn-outline-secondary active" data-range="today">Today</button>
-                <button class="btn btn-outline-secondary" data-range="7">7 Days</button>
-                <button class="btn btn-outline-secondary" data-range="15">15 Days</button>
-                <button class="btn btn-outline-secondary" data-range="30">30 Days</button>
-                <button class="btn btn-outline-secondary" data-range="3m">3 Months</button>
-                <button class="btn btn-outline-secondary" data-range="6m">6 Months</button>
-                <button class="btn btn-outline-secondary" data-range="1y">1 Year</button>
-              </div>
+      <!-- Reports Section -->
+      <div class="chart-section mt-4">
+        <div class="section-header">
+          <h5>Reports</h5>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Date ranges" id="rangeButtons">
+              <button class="btn btn-outline-secondary active" data-range="today">Today</button>
+              <button class="btn btn-outline-secondary" data-range="7">7 Days</button>
+              <button class="btn btn-outline-secondary" data-range="15">15 Days</button>
+              <button class="btn btn-outline-secondary" data-range="30">30 Days</button>
+              <button class="btn btn-outline-secondary" data-range="3m">3 Months</button>
+              <button class="btn btn-outline-secondary" data-range="6m">6 Months</button>
+              <button class="btn btn-outline-secondary" data-range="1y">1 Year</button>
+            </div>
+            <div class="ms-3">
+              <div class="small text-muted">Orders Total</div>
+              <div class="total-amount" id="ordersRangeTotal">रू 0.00</div>
+            </div>
+            <?php if (table_exists($pdo, 'bookings')): ?>
               <div class="ms-3">
-                <div class="small text-muted">Orders Total (selected range)</div>
-                <div class="total-amount" id="ordersRangeTotal">रू 0.00</div>
-              </div>
-              <div class="ms-3">
-                <div class="small text-muted">Bookings Total (selected range)</div>
+                <div class="small text-muted">Bookings Total</div>
                 <div class="total-amount" id="bookingsRangeTotal">रू 0.00</div>
               </div>
-              <!-- filters removed per request: search/status/payment -->
-              <button id="exportOrdersBtn" class="btn btn-sm btn-success">
-                <i class="fas fa-file-csv"></i> Export Orders
-                <span id="ordersCountBadge" class="badge bg-light text-dark ms-2 badge-count">0</span>
+              <div class="ms-3">
+                <div class="small text-muted">Combined Total</div>
+                <div class="total-amount" id="combinedRangeTotal">रू 0.00</div>
+              </div>
+            <?php endif; ?>
+            <button id="exportOrdersBtn" class="btn btn-sm btn-success">
+              <i class="fas fa-file-csv"></i> Export Orders
+              <span id="ordersCountBadge" class="badge bg-light text-dark ms-2 badge-count">0</span>
+            </button>
+            <?php if (table_exists($pdo, 'bookings')): ?>
+              <button id="exportBookingsBtn" class="btn btn-sm btn-success">
+                <i class="fas fa-file-csv"></i> Export Bookings
+                <span id="bookingsCountBadge" class="badge bg-light text-dark ms-2 badge-count">0</span>
               </button>
+            <?php endif; ?>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-12">
+            <h6>Orders</h6>
+            <div class="table-responsive">
+              <table class="table table-striped table-sm" id="ordersTable">
+                <thead class="table-dark">
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Item</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Status</th>
+                    <th>Payment</th>
+                    <th>Table/Room</th>
+                    <th>Order Date</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
             </div>
           </div>
 
-          <div class="row">
-            <div class="col-12">
-              <h6>Orders</h6>
-              <div class="table-responsive">
-                <table class="table table-striped table-sm" id="ordersTable">
-                  <thead class="table-dark">
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Item</th>
-                      <th>Price</th>
-                      <th>Qty</th>
-                      <th>Status</th>
-                      <th>Payment</th>
-                      <th>Table/Room</th>
-                      <th>Order Date</th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Rooms section removed per request -->
-
+          <?php if (table_exists($pdo, 'bookings')): ?>
             <div class="col-12 mt-4">
               <h6>Bookings</h6>
               <div class="table-responsive">
@@ -810,270 +1060,397 @@ function format_npr($amount) {
                 </table>
               </div>
             </div>
-          </div>
+          <?php endif; ?>
         </div>
-
-        <script>
-        // Format labels as short day names + date
-        const rawLabels = <?php echo json_encode($labels); ?>;
-        const labels = rawLabels.map(d => {
-          try {
-            const dt = new Date(d + 'T00:00:00');
-            return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-          } catch(e) {
-            return d;
-          }
-        });
-        
-        const data = <?php echo json_encode($data); ?>;
-        const ctx = document.getElementById('salesChart').getContext('2d');
-        
-        // Create gradient
-        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-        gradient.addColorStop(0, 'rgba(124, 58, 237, 0.2)');
-        gradient.addColorStop(1, 'rgba(124, 58, 237, 0.05)');
-        
-        new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              label: 'Sales',
-              data,
-              tension: 0.4,
-              borderColor: '#7c3aed',
-              backgroundColor: gradient,
-              borderWidth: 3,
-              pointBackgroundColor: '#7c3aed',
-              pointBorderColor: '#ffffff',
-              pointBorderWidth: 2,
-              pointRadius: 5,
-              pointHoverRadius: 7
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false
-              },
-              tooltip: {
-                mode: 'index',
-                intersect: false,
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                titleColor: '#1f2937',
-                bodyColor: '#1f2937',
-                borderColor: '#e5e7eb',
-                borderWidth: 1,
-                cornerRadius: 8,
-                callbacks: {
-                  label: function(context) {
-                    return 'Sales: ' + formatNPR(context.parsed.y);
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                grid: {
-                  color: '#f3f4f6',
-                  drawBorder: false
-                },
-                ticks: {
-                  color: '#6b7280'
-                }
-              },
-              y: {
-                grid: {
-                  color: '#f3f4f6',
-                  drawBorder: false
-                },
-                ticks: {
-                  color: '#6b7280',
-                  callback: function(value) {
-                    return formatNPR(value);
-                  }
-                },
-                beginAtZero: true
-              }
-            },
-            interaction: {
-              intersect: false,
-              mode: 'nearest'
-            }
-          }
-        });
-
-        // helper to format Nepali rupee in JS
-        function formatNPR(value) {
-          const num = Number(value) || 0;
-          return 'रू ' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        }
-
-        // Sidebar toggle
-        document.addEventListener('DOMContentLoaded', function() {
-          const sidebar = document.getElementById('adminSidebar');
-          const toggle = document.getElementById('sidebarToggle');
-          const body = document.body;
-          
-          // Check for saved state
-          const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-          if (isCollapsed) {
-            body.classList.add('sidebar-collapsed');
-          }
-          
-          // Mobile menu toggle
-          const mobileMenuBtn = document.getElementById('mobileMenuToggle');
-          if (mobileMenuBtn) {
-            mobileMenuBtn.addEventListener('click', function() {
-              sidebar.classList.toggle('show');
-            });
-          }
-          
-          // Toggle sidebar collapse
-          if (toggle) {
-            toggle.addEventListener('click', function() {
-              body.classList.toggle('sidebar-collapsed');
-              localStorage.setItem('sidebarCollapsed', body.classList.contains('sidebar-collapsed'));
-            });
-          }
-
-          // Reports: fetch and render orders/rooms
-          const rangeButtons = document.getElementById('rangeButtons');
-          let currentRange = 'today';
-
-          function setActiveRangeBtn(btn) {
-            [...rangeButtons.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            currentRange = btn.getAttribute('data-range');
-            fetchAndRenderOrders(currentRange);
-            fetchAndRenderBookings(currentRange);
-            // refresh per-range revenue cards as ranges may have changed
-            loadRangeRevenues();
-          }
-
-          rangeButtons.querySelectorAll('button').forEach(btn=>{
-            btn.addEventListener('click', function(){ setActiveRangeBtn(this); });
-          });
-
-          // search and filter inputs - re-render table on change
-          // Search and filter UI removed — dashboard will show server-provided range data without client-side filters
-
-          let ordersRawData = [];
-          let bookingsRawData = [];
-
-          async function fetchAndRenderOrders(range) {
-            try {
-              const res = await fetch('data_orders.php?range=' + encodeURIComponent(range));
-              const data = await res.json();
-              ordersRawData = data;
-              renderOrdersTable(data);
-              // update total badge and revenue quick stat
-              document.getElementById('ordersCountBadge').textContent = data.length;
-              const total = data.reduce((s,r)=> s + (parseFloat(r.price) * (parseInt(r.qty) || 1)), 0);
-              // update orders range total display
-              const ordersTotalEl = document.getElementById('ordersRangeTotal');
-              if (ordersTotalEl) ordersTotalEl.textContent = formatNPR(total);
-            } catch (e) {
-              console.error('Failed to load orders', e);
-            }
-          }
-
-          function renderOrdersTable(data) {
-            const tbody = document.querySelector('#ordersTable tbody');
-            tbody.innerHTML = '';
-            const filtered = data; // no client-side filters (search/status/payment removed)
-            filtered.forEach(r=>{
-              const tr = document.createElement('tr');
-              tr.innerHTML = `<td>${escapeHtml(r.order_id)}</td>
-                <td>${escapeHtml(r.item_name)}</td>
-                <td>${formatNPR(parseFloat(r.price).toFixed(2))}</td>
-                <td>${r.qty}</td>
-                <td>${escapeHtml(r.status)}</td>
-                <td>${escapeHtml(r.payment_method)}</td>
-                <td>${escapeHtml(r.table_number)}</td>
-                <td>${escapeHtml(r.order_date)}</td>`;
-              tbody.appendChild(tr);
-            });
-            document.getElementById('ordersCountBadge').textContent = filtered.length;
-          }
-
-          async function fetchAndRenderBookings(range) {
-            try {
-              const res = await fetch('data_bookings.php?range=' + encodeURIComponent(range));
-              const data = await res.json();
-              bookingsRawData = data;
-              // compute totals and render summary
-              const tbody = document.querySelector('#bookingsTable tbody');
-              if (tbody) tbody.innerHTML = '';
-              let total = 0;
-              data.forEach(b=>{
-                if (b.amount) total += parseFloat(b.amount) || 0;
-                if (tbody) {
-                  const tr = document.createElement('tr');
-                  tr.innerHTML = `<td>${escapeHtml(b.id)}</td>
-                    <td>${escapeHtml(b.guest)}</td>
-                    <td>${b.amount ? formatNPR(parseFloat(b.amount).toFixed(2)) : ''}</td>
-                    <td>${escapeHtml(b.status)}</td>
-                    <td>${escapeHtml(b.payment_method)}</td>
-                    <td>${escapeHtml(b.booking_date)}</td>`;
-                  tbody.appendChild(tr);
-                }
-              });
-              const bookingsTotalEl = document.getElementById('bookingsRangeTotal');
-              if (bookingsTotalEl) bookingsTotalEl.textContent = formatNPR(total);
-            } catch (e) {
-              console.error('Failed to load bookings', e);
-            }
-          }
-
-          // Load revenue totals for multiple ranges
-          async function loadRangeRevenues() {
-            const ranges = [
-              {key: '15', el: document.getElementById('revenue_15')},
-              {key: '30', el: document.getElementById('revenue_30')},
-              {key: '60', el: document.getElementById('revenue_60')},
-              {key: '120', el: document.getElementById('revenue_120')},
-              {key: '6m', el: document.getElementById('revenue_6m')},
-              {key: '1y', el: document.getElementById('revenue_1y')}
-            ];
-
-              await Promise.all(ranges.map(async r => {
-                try {
-                  // fetch orders and bookings for the same range in parallel
-                  const [ordersRes, bookingsRes] = await Promise.all([
-                    fetch('data_orders.php?range=' + encodeURIComponent(r.key)),
-                    fetch('data_bookings.php?range=' + encodeURIComponent(r.key))
-                  ]);
-                  const [orders, bookings] = await Promise.all([ordersRes.json(), bookingsRes.json()]);
-                  const ordersTotal = orders.reduce((s,row) => s + (parseFloat(row.price) * (parseInt(row.qty) || 1)), 0);
-                  const bookingsTotal = (bookings || []).reduce((s,b) => s + (parseFloat(b.amount || 0) || 0), 0);
-                  const total = ordersTotal + bookingsTotal;
-                  if (r.el) r.el.textContent = formatNPR(total);
-                } catch (e) {
-                  console.error('Failed to load revenue for', r.key, e);
-                  if (r.el) r.el.textContent = 'रू 0.00';
-                }
-              }));
-          }
-
-          // Rooms data removed from reports per request
-
-          function escapeHtml(s){ if (s===null||s===undefined) return ''; return String(s).replace(/[&<>\"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]; }); }
-
-          // Export buttons
-          document.getElementById('exportOrdersBtn').addEventListener('click', function(){
-            window.location = 'export_orders.php?range=' + encodeURIComponent(currentRange);
-          });
-
-          // initial load: fetch orders and bookings, and populate revenue range cards
-          fetchAndRenderOrders(currentRange);
-          fetchAndRenderBookings(currentRange);
-          loadRangeRevenues();
-        });
-      </script>
+      </div>
     </div>
   </div>
+
+  <script>
+    // Format labels as short day names + date
+    const rawLabels = <?php echo json_encode($labels); ?>;
+    const labels = rawLabels.map(d => {
+      try {
+        const dt = new Date(d + 'T00:00:00');
+        return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      } catch(e) {
+        return d;
+      }
+    });
+    
+    const data = <?php echo json_encode($data); ?>;
+    const ctx = document.getElementById('salesChart').getContext('2d');
+    
+    // Create gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(124, 58, 237, 0.2)');
+    gradient.addColorStop(1, 'rgba(124, 58, 237, 0.05)');
+    
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Sales',
+          data,
+          tension: 0.4,
+          borderColor: '#7c3aed',
+          backgroundColor: gradient,
+          borderWidth: 3,
+          pointBackgroundColor: '#7c3aed',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            titleColor: '#1f2937',
+            bodyColor: '#1f2937',
+            borderColor: '#e5e7eb',
+            borderWidth: 1,
+            cornerRadius: 8,
+            callbacks: {
+              label: function(context) {
+                return 'Sales: ' + formatNPR(context.parsed.y);
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              color: '#f3f4f6',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#6b7280'
+            }
+          },
+          y: {
+            grid: {
+              color: '#f3f4f6',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#6b7280',
+              callback: function(value) {
+                return formatNPR(value);
+              }
+            },
+            beginAtZero: true
+          }
+        },
+        interaction: {
+          intersect: false,
+          mode: 'nearest'
+        }
+      }
+    });
+
+    // Helper to format Nepali rupee in JS
+    function formatNPR(value) {
+      const num = Number(value) || 0;
+      return 'रू ' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Escape HTML special characters
+    function escapeHtml(s) { 
+      if (s === null || s === undefined) return ''; 
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    // Sidebar toggle
+    document.addEventListener('DOMContentLoaded', function() {
+      const sidebar = document.getElementById('adminSidebar');
+      const toggle = document.getElementById('sidebarToggle');
+      const body = document.body;
+      
+      // Check for saved state
+      const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+      if (isCollapsed) {
+        body.classList.add('sidebar-collapsed');
+      }
+      
+      // Mobile menu toggle
+      const mobileMenuBtn = document.getElementById('mobileMenuToggle');
+      if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', function() {
+          sidebar.classList.toggle('show');
+        });
+      }
+      
+      // Toggle sidebar collapse
+      if (toggle) {
+        toggle.addEventListener('click', function() {
+          body.classList.toggle('sidebar-collapsed');
+          localStorage.setItem('sidebarCollapsed', body.classList.contains('sidebar-collapsed'));
+        });
+      }
+
+      // Reports functionality
+      const rangeButtons = document.getElementById('rangeButtons');
+      let currentRange = 'today';
+
+      function setActiveRangeBtn(btn) {
+        [...rangeButtons.querySelectorAll('button')].forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentRange = btn.getAttribute('data-range');
+        fetchAndRenderOrders(currentRange);
+        fetchAndRenderBookings(currentRange);
+        loadRangeRevenues();
+      }
+
+      rangeButtons.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', function() { setActiveRangeBtn(this); });
+      });
+
+      let ordersRawData = [];
+      let bookingsRawData = [];
+      let lastOrdersRangeTotal = 0;
+      let lastBookingsRangeTotal = 0;
+
+      async function fetchAndRenderOrders(range) {
+        try {
+          const res = await fetch('data_orders.php?range=' + encodeURIComponent(range));
+          const json = await res.json();
+          
+          let rows = [];
+          let orderCount = 0;
+          let total = 0;
+          
+          if (Array.isArray(json)) {
+            rows = json;
+            orderCount = new Set(rows.map(r => r.order_id)).size;
+            total = rows.reduce((sum, row) => {
+              const price = parseFloat(row.price) || 0;
+              const qty = parseInt(row.qty) || 1;
+              return sum + (price * qty);
+            }, 0);
+          } else if (json && typeof json === 'object') {
+            rows = json.rows || [];
+            orderCount = json.order_count || new Set(rows.map(r => r.order_id)).size;
+            total = parseFloat(json.total) || rows.reduce((sum, row) => {
+              const price = parseFloat(row.price) || 0;
+              const qty = parseInt(row.qty) || 1;
+              return sum + (price * qty);
+            }, 0);
+          }
+
+          ordersRawData = rows;
+          renderOrdersTable(rows);
+          
+          // Update UI
+          document.getElementById('ordersCountBadge').textContent = rows.length;
+          document.getElementById('ordersRangeTotal').textContent = formatNPR(total);
+          
+          // Store and update combined total
+          lastOrdersRangeTotal = total;
+          const combinedEl = document.getElementById('combinedRangeTotal');
+          if (combinedEl) {
+            combinedEl.textContent = formatNPR(lastOrdersRangeTotal + lastBookingsRangeTotal);
+          }
+
+          // Update today's stats if viewing today
+          if (range === 'today') {
+            document.getElementById('todayOrdersCount').textContent = orderCount;
+            const todayOrdersRevenue = document.getElementById('todayOrdersRevenue');
+            if (todayOrdersRevenue) {
+              todayOrdersRevenue.textContent = formatNPR(total);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load orders:', e);
+          document.getElementById('ordersRangeTotal').textContent = 'रू 0.00';
+        }
+      }
+
+      function renderOrdersTable(data) {
+        const tbody = document.querySelector('#ordersTable tbody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        data.forEach(row => {
+          const tr = document.createElement('tr');
+          const price = parseFloat(row.price) || 0;
+          tr.innerHTML = `
+            <td>${escapeHtml(row.order_id)}</td>
+            <td>${escapeHtml(row.item_name)}</td>
+            <td>${formatNPR(price)}</td>
+            <td>${escapeHtml(row.qty)}</td>
+            <td>${escapeHtml(row.status)}</td>
+            <td>${escapeHtml(row.payment_method)}</td>
+            <td>${escapeHtml(row.table_number)}</td>
+            <td>${escapeHtml(row.order_date)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      async function fetchAndRenderBookings(range) {
+        const bookingsTable = document.getElementById('bookingsTable');
+        const bookingsTotalEl = document.getElementById('bookingsRangeTotal');
+        
+        if (!bookingsTable || !bookingsTotalEl) {
+          return;
+        }
+        
+        try {
+          const res = await fetch('data_bookings.php?range=' + encodeURIComponent(range));
+          const json = await res.json();
+          
+          let rows = [];
+          let total = 0;
+          
+          if (Array.isArray(json)) {
+            rows = json;
+            total = rows.reduce((sum, booking) => sum + (parseFloat(booking.amount || 0) || 0), 0);
+          } else if (json && typeof json === 'object') {
+            rows = json.rows || [];
+            total = parseFloat(json.total) || rows.reduce((sum, booking) => sum + (parseFloat(booking.amount || 0) || 0), 0);
+          }
+
+          bookingsRawData = rows;
+          const tbody = bookingsTable.querySelector('tbody');
+          if (tbody) tbody.innerHTML = '';
+          
+          rows.forEach(booking => {
+            if (tbody) {
+              const tr = document.createElement('tr');
+              const amount = parseFloat(booking.amount) || 0;
+              tr.innerHTML = `
+                <td>${escapeHtml(booking.id)}</td>
+                <td>${escapeHtml(booking.guest)}</td>
+                <td>${amount > 0 ? formatNPR(amount) : ''}</td>
+                <td>${escapeHtml(booking.status)}</td>
+                <td>${escapeHtml(booking.payment_method)}</td>
+                <td>${escapeHtml(booking.booking_date)}</td>
+              `;
+              tbody.appendChild(tr);
+            }
+          });
+
+          // Update UI
+          bookingsTotalEl.textContent = formatNPR(total);
+          document.getElementById('bookingsCountBadge').textContent = rows.length;
+          
+          // Store and update combined total
+          lastBookingsRangeTotal = total;
+          const combinedEl = document.getElementById('combinedRangeTotal');
+          if (combinedEl) {
+            combinedEl.textContent = formatNPR(lastOrdersRangeTotal + lastBookingsRangeTotal);
+          }
+
+          // Update today's stats if viewing today
+          if (range === 'today') {
+            document.getElementById('todayBookingsCount').textContent = rows.length;
+            const todayBookingsRevenue = document.getElementById('todayBookingsRevenue');
+            if (todayBookingsRevenue) {
+              todayBookingsRevenue.textContent = formatNPR(total);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load bookings:', e);
+          bookingsTotalEl.textContent = 'रू 0.00';
+        }
+      }
+
+      async function loadRangeRevenues() {
+        const ranges = [
+          {key: '15', el: document.getElementById('revenue_15')},
+          {key: '30', el: document.getElementById('revenue_30')},
+          {key: '60', el: document.getElementById('revenue_60')},
+          {key: '120', el: document.getElementById('revenue_120')},
+          {key: '6m', el: document.getElementById('revenue_6m')},
+          {key: '1y', el: document.getElementById('revenue_1y')}
+        ];
+
+        for (const range of ranges) {
+          try {
+            const [ordersRes, bookingsRes] = await Promise.all([
+              fetch('data_orders.php?range=' + encodeURIComponent(range.key)),
+              fetch('data_bookings.php?range=' + encodeURIComponent(range.key))
+            ]);
+            
+            const ordersData = await ordersRes.json();
+            const bookingsData = await bookingsRes.json();
+            
+            // Calculate orders total
+            let ordersTotal = 0;
+            if (Array.isArray(ordersData)) {
+              ordersTotal = ordersData.reduce((sum, row) => {
+                const price = parseFloat(row.price) || 0;
+                const qty = parseInt(row.qty) || 1;
+                return sum + (price * qty);
+              }, 0);
+            } else if (ordersData && typeof ordersData === 'object') {
+              ordersTotal = parseFloat(ordersData.total) || 0;
+            }
+            
+            // Calculate bookings total
+            let bookingsTotal = 0;
+            if (Array.isArray(bookingsData)) {
+              bookingsTotal = bookingsData.reduce((sum, booking) => {
+                return sum + (parseFloat(booking.amount || 0) || 0);
+              }, 0);
+            } else if (bookingsData && typeof bookingsData === 'object') {
+              bookingsTotal = parseFloat(bookingsData.total) || 0;
+            }
+            
+            const total = ordersTotal + bookingsTotal;
+            if (range.el) {
+              range.el.textContent = formatNPR(total);
+            }
+          } catch (e) {
+            console.error('Failed to load revenue for', range.key, e);
+            if (range.el) {
+              range.el.textContent = 'रू 0.00';
+            }
+          }
+        }
+      }
+
+      // Export buttons
+      document.getElementById('exportOrdersBtn').addEventListener('click', function() {
+        window.location.href = 'export_orders.php?range=' + encodeURIComponent(currentRange);
+      });
+      
+      const exportBookingsBtn = document.getElementById('exportBookingsBtn');
+      if (exportBookingsBtn) {
+        exportBookingsBtn.addEventListener('click', function() {
+          window.location.href = 'export_bookings.php?range=' + encodeURIComponent(currentRange);
+        });
+      }
+
+      // Initialize Bootstrap alerts
+      const alertList = document.querySelectorAll('.alert');
+      alertList.forEach(function (alert) {
+        const closeButton = alert.querySelector('.btn-close');
+        if (closeButton) {
+          closeButton.addEventListener('click', function () {
+            alert.remove();
+          });
+        }
+      });
+
+      // Initial load
+      fetchAndRenderOrders(currentRange);
+      fetchAndRenderBookings(currentRange);
+      loadRangeRevenues();
+    });
+  </script>
 </body>
 </html>

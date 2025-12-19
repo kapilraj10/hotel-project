@@ -7,6 +7,8 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS admins (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(100) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
+  role VARCHAR(50) DEFAULT 'admin',
+  permissions TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
@@ -29,24 +31,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
     header('Location: admins.php'); exit;
 }
 
-$admins = $pdo->query('SELECT id,username,created_at FROM admins ORDER BY id DESC')->fetchAll();
+$admins = [];
+// Ensure columns exist (for older installs)
+try {
+  $pdo->exec("ALTER TABLE admins ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin'");
+} catch (Throwable $e) {
+  // some MySQL versions don't support IF NOT EXISTS in ALTER; try-safe fallback
+  try { $pdo->exec("ALTER TABLE admins ADD COLUMN role VARCHAR(50) DEFAULT 'admin'"); } catch (Throwable $__e) { /* ignore */ }
+}
+try {
+  $pdo->exec("ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions TEXT NULL");
+} catch (Throwable $e) {
+  try { $pdo->exec("ALTER TABLE admins ADD COLUMN permissions TEXT NULL"); } catch (Throwable $__e) { /* ignore */ }
+}
+
+try {
+  $admins = $pdo->query('SELECT id,username,role,created_at FROM admins ORDER BY id DESC')->fetchAll();
+} catch (Throwable $e) {
+  // fallback to older schema if role column still missing
+  $admins = $pdo->query('SELECT id,username,created_at FROM admins ORDER BY id DESC')->fetchAll();
+}
 
 $page_title = 'Admin Accounts'; include __DIR__ . '/admin_header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Admin Accounts</h3>
-  <a class="btn btn-secondary" href="dashboard.php">Back</a>
+  <div>
+    <a class="btn btn-primary me-2" href="admin_create.php">Add Admin</a>
+    <a class="btn btn-secondary" href="dashboard.php">Back</a>
+  </div>
 </div>
 
 <div class="table-responsive">
   <table class="table table-striped">
-    <thead><tr><th>ID</th><th>Username</th><th>Created</th><th>Actions</th></tr></thead>
+    <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
     <tbody>
       <?php foreach ($admins as $a): ?>
       <tr>
         <td><?= $a['id'] ?></td>
         <td><?= htmlspecialchars($a['username']) ?></td>
+        <td><?= htmlspecialchars($a['role'] ?? '') ?></td>
         <td><?= htmlspecialchars($a['created_at']) ?></td>
         <td>
           <a class="btn btn-sm btn-secondary" href="admin_edit.php?id=<?= $a['id'] ?>">Edit</a>

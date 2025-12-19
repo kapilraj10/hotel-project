@@ -53,11 +53,16 @@ $page_title = 'Users'; include __DIR__ . '/admin_header.php';
         <td><?= htmlspecialchars($u['created_at']) ?></td>
         <td>
           <a class="btn btn-sm btn-secondary" href="user_edit.php?id=<?= $u['id'] ?>">Edit</a>
+          <?php if (function_exists('admin_has_role') && (admin_has_role('superadmin') || (isset($_SESSION['admin_permissions']) && stripos($_SESSION['admin_permissions'], 'delete_users') !== false))): ?>
           <form method="post" style="display:inline-block" onsubmit="return confirm('Delete user?')">
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
             <button class="btn btn-sm btn-danger">Delete</button>
           </form>
+          <?php else: ?>
+            <!-- Delete disabled for this admin -->
+            <button class="btn btn-sm btn-danger" disabled title="You do not have permission to delete users">Delete</button>
+          <?php endif; ?>
         </td>
       </tr>
       <?php endforeach; ?>

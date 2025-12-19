@@ -7,6 +7,8 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS admins (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(100) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
+  role VARCHAR(50) DEFAULT 'admin',
+  permissions TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
@@ -20,19 +22,21 @@ if (!$admin) { header('Location: admins.php'); exit; }
 
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
+  $username = trim($_POST['username'] ?? '');
+  $password = $_POST['password'] ?? '';
+  $role = trim($_POST['role'] ?? 'admin');
+  $permissions = trim($_POST['permissions'] ?? '');
     if ($username === '' || !filter_var($username, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email username is required';
     if (!$errors) {
         try {
-            if ($password) {
-                $hash = password_hash($password, PASSWORD_DEFAULT);
-                $ust = $pdo->prepare('UPDATE admins SET username = ?, password = ? WHERE id = ?');
-                $ust->execute([$username, $hash, $id]);
-            } else {
-                $ust = $pdo->prepare('UPDATE admins SET username = ? WHERE id = ?');
-                $ust->execute([$username, $id]);
-            }
+      if ($password) {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $ust = $pdo->prepare('UPDATE admins SET username = ?, password = ?, role = ?, permissions = ? WHERE id = ?');
+        $ust->execute([$username, $hash, $role, $permissions, $id]);
+      } else {
+        $ust = $pdo->prepare('UPDATE admins SET username = ?, role = ?, permissions = ? WHERE id = ?');
+        $ust->execute([$username, $role, $permissions, $id]);
+      }
             // if a users row exists with previous username, update it to keep sync
             $prev = $admin['username'];
             $ucheck = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
@@ -68,6 +72,19 @@ $page_title = 'Edit Admin'; include __DIR__ . '/admin_header.php';
   <div class="mb-3">
     <label class="form-label">Password (leave blank to keep)</label>
     <input name="password" type="password" class="form-control">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Role</label>
+    <select name="role" class="form-select">
+      <option value="superadmin" <?php if (($admin['role'] ?? '')==='superadmin') echo 'selected'; ?>>Superadmin</option>
+      <option value="admin" <?php if (($admin['role'] ?? '')==='admin') echo 'selected'; ?>>Admin</option>
+      <option value="manager" <?php if (($admin['role'] ?? '')==='manager') echo 'selected'; ?>>Manager</option>
+      <option value="staff" <?php if (($admin['role'] ?? '')==='staff') echo 'selected'; ?>>Staff</option>
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Permissions (JSON or comma list)</label>
+    <textarea name="permissions" class="form-control" rows="3"><?php echo htmlspecialchars($admin['permissions'] ?? '') ?></textarea>
   </div>
   <div>
     <button class="btn btn-primary">Save</button>

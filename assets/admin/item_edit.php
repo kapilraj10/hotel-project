@@ -22,15 +22,57 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
 ?>
 <?php $page_title='Edit Item'; include __DIR__ . '/admin_header.php'; ?>
 
-<h3>Edit Item</h3>
-<?php if($error) echo '<div class="alert alert-danger">'.htmlspecialchars($error).'</div>'; ?>
-<form method="post" enctype="multipart/form-data">
-  <div class="mb-3"><label>Name</label><input name="name" class="form-control" required value="<?=htmlspecialchars($it['name'])?>"></div>
-  <div class="mb-3"><label>Price</label><input name="price" type="number" step="0.01" class="form-control" required value="<?=htmlspecialchars($it['price'])?>"></div>
-  <div class="mb-3"><label>Category</label><select name="category_id" class="form-select"><?php foreach($cats as $c) echo '<option value="'.$c['id'].'"'.($c['id']==$it['category_id']? ' selected':'').'>'.htmlspecialchars($c['name']).'</option>'; ?></select></div>
-  <div class="mb-3"><label>Description</label><textarea name="description" class="form-control"><?=htmlspecialchars($it['description'])?></textarea></div>
-  <div class="mb-3"><label>Image</label><input type="file" name="image" accept="image/*" class="form-control"><div class="mt-2"><?php if($it['image_path']): ?><img src="<?=htmlspecialchars($it['image_path'])?>" style="max-width:200px"><?php endif; ?></div></div>
-  <button class="btn btn-primary">Save</button>
-</form>
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h3 class="mb-0">Edit Item</h3>
+        <div class="text-muted small">Update item details</div>
+      </div>
+      <div>
+        <a class="btn btn-outline-secondary btn-sm" href="items.php">Back to items</a>
+      </div>
+    </div>
+
+    <?php if($error) echo '<div class="alert alert-danger">'.htmlspecialchars($error).'</div>'; ?>
+    <form method="post" enctype="multipart/form-data">
+      <div class="row">
+        <div class="col-12 col-md-7">
+          <div class="mb-3"><label>Name</label><input name="name" class="form-control" required value="<?=htmlspecialchars($it['name'])?>"></div>
+          <div class="mb-3"><label>Price</label><input name="price" type="number" step="0.01" class="form-control" required value="<?=htmlspecialchars($it['price'])?>"></div>
+          <div class="mb-3"><label>Category</label><select name="category_id" class="form-select"><?php foreach($cats as $c) echo '<option value="'.$c['id'].'"'.($c['id']==$it['category_id']? ' selected':'').'>'.htmlspecialchars($c['name']).'</option>'; ?></select></div>
+          <div class="mb-3"><label>Description</label><textarea name="description" class="form-control" rows="4"><?=htmlspecialchars($it['description'])?></textarea></div>
+          <div class="d-flex gap-2 mt-2"><button class="btn btn-primary">Save</button> <a class="btn btn-secondary" href="items.php">Cancel</a> <a class="btn btn-danger" href="item_delete.php?id=<?= $it['id'] ?>">Delete</a></div>
+        </div>
+        <div class="col-12 col-md-5">
+          <label class="form-label">Image</label>
+          <div class="mb-2"><input type="file" name="image" accept="image/*" class="form-control" id="imageInput"></div>
+          <div class="mb-2">
+            <?php if($it['image_path']): ?>
+              <img id="preview" src="<?=htmlspecialchars($it['image_path'])?>" class="img-preview" alt="Current image">
+            <?php else: ?>
+              <img id="preview" class="img-preview" style="display:none" alt="Preview">
+            <?php endif; ?>
+          </div>
+          <div class="text-muted small">Upload to replace existing image. Accepted: jpg, png, gif, webp, svg</div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const input = document.getElementById('imageInput');
+    const preview = document.getElementById('preview');
+    if (!input) return;
+    input.addEventListener('change', function(){
+      const f = this.files && this.files[0];
+      if (!f) { if(preview) preview.style.display='none'; return; }
+      const url = URL.createObjectURL(f);
+      if (preview) { preview.src = url; preview.style.display='block'; }
+    });
+  })();
+</script>
 
 <?php include __DIR__ . '/admin_footer.php'; ?>

@@ -28,13 +28,64 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
 ?>
 <?php $page_title='Edit Category'; include __DIR__ . '/admin_header.php'; ?>
 
-<h3>Edit Category</h3>
-<?php if ($error) echo '<div class="alert alert-danger">' . htmlspecialchars($error) . '</div>'; ?>
-<form method="post" enctype="multipart/form-data">
-  <div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" required value="<?=htmlspecialchars($cat['name'])?>"></div>
-  <div class="mb-3"><label class="form-label">Description</label><textarea name="description" class="form-control"><?=htmlspecialchars($cat['description'])?></textarea></div>
-  <div class="mb-3"><label class="form-label">Image</label><input type="file" name="image" accept="image/*" class="form-control"><div class="mt-2"><?php if ($cat['image_path']): ?><img src="<?=htmlspecialchars($cat['image_path'])?>" style="max-width:200px"><?php endif; ?></div></div>
-  <button class="btn btn-primary">Save</button>
-</form>
+<style>
+  .img-preview { max-width: 100%; max-height: 240px; object-fit: cover; display:block; }
+  @media (max-width:576px){ .img-preview { max-height:160px; } }
+</style>
+
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h3 class="mb-0">Edit Category</h3>
+        <div class="text-muted small">Update category details</div>
+      </div>
+      <div>
+        <a class="btn btn-outline-secondary btn-sm" href="categories.php">Back to categories</a>
+      </div>
+    </div>
+
+    <?php if ($error) echo '<div class="alert alert-danger">' . htmlspecialchars($error) . '</div>'; ?>
+    <form method="post" enctype="multipart/form-data">
+      <div class="row">
+        <div class="col-12 col-md-7">
+          <div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" required value="<?=htmlspecialchars($cat['name'])?>"></div>
+          <div class="mb-3"><label class="form-label">Description</label><textarea name="description" class="form-control" rows="5"><?=htmlspecialchars($cat['description'])?></textarea></div>
+          <div class="mb-3 d-flex gap-2">
+            <button class="btn btn-primary">Save</button>
+            <a class="btn btn-secondary" href="categories.php">Cancel</a>
+            <a class="btn btn-danger" href="category_delete.php?id=<?= $cat['id'] ?>" onclick="return confirm('Delete category?')">Delete</a>
+          </div>
+        </div>
+        <div class="col-12 col-md-5">
+          <label class="form-label">Image</label>
+          <div class="mb-2"><input type="file" name="image" accept="image/*" class="form-control" id="imageInput"></div>
+          <div class="mb-2">
+            <?php if ($cat['image_path']): ?>
+              <img id="preview" src="<?=htmlspecialchars($cat['image_path'])?>" class="img-preview" alt="Current image">
+            <?php else: ?>
+              <img id="preview" class="img-preview" style="display:none" alt="Preview">
+            <?php endif; ?>
+          </div>
+          <div class="text-muted small">Upload to replace existing image. Accepted: jpg, png, gif, webp, svg</div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const input = document.getElementById('imageInput');
+    const preview = document.getElementById('preview');
+    if (!input) return;
+    input.addEventListener('change', function(){
+      const f = this.files && this.files[0];
+      if (!f) { if(preview) preview.style.display='none'; return; }
+      const url = URL.createObjectURL(f);
+      if (preview) { preview.src = url; preview.style.display='block'; }
+    });
+  })();
+</script>
 
 <?php include __DIR__ . '/admin_footer.php'; ?>

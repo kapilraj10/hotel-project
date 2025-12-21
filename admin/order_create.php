@@ -10,11 +10,17 @@ require_once __DIR__ . '/../db_rest.php';
 
 $pdo = get_rest_db();
 
-// Load tables for assignment
+// Load tables and rooms for assignment (tables_info may store both; use is_room flag)
 try {
-    $tables = $pdo->query('SELECT id, table_number, table_type FROM tables_info ORDER BY table_number')->fetchAll();
+    $tables = $pdo->query("SELECT id, table_number, table_type FROM tables_info WHERE COALESCE(is_room,0)=0 ORDER BY table_number")->fetchAll();
 } catch (Exception $e) {
     $tables = [];
+}
+
+try {
+    $rooms = $pdo->query("SELECT id, table_number, table_type FROM tables_info WHERE COALESCE(is_room,0)=1 ORDER BY table_number")->fetchAll();
+} catch (Exception $e) {
+    $rooms = [];
 }
 
 // Handle AJAX requests for search suggestions
@@ -290,12 +296,24 @@ include __DIR__ . '/admin_header.php';
                         <input type="text" name="customer_name" class="form-control">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Table Number</label>
+                        <label class="form-label">Table / Room</label>
                         <select name="table_number" class="form-select">
                             <option value="">None / Takeaway</option>
-                            <?php foreach ($tables as $t): ?>
-                                <option value="<?= htmlspecialchars($t['table_number']) ?>">Table <?= htmlspecialchars($t['table_number']) ?> <?= !empty($t['table_type']) ? '(' . htmlspecialchars($t['table_type']) . ')' : '' ?></option>
-                            <?php endforeach; ?>
+                            <?php if (!empty($tables)): ?>
+                                <optgroup label="Tables">
+                                <?php foreach ($tables as $t): ?>
+                                    <option value="<?= htmlspecialchars($t['table_number']) ?>">Table <?= htmlspecialchars($t['table_number']) ?> <?= !empty($t['table_type']) ? '(' . htmlspecialchars($t['table_type']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
+                                </optgroup>
+                            <?php endif; ?>
+
+                            <?php if (!empty($rooms)): ?>
+                                <optgroup label="Rooms">
+                                <?php foreach ($rooms as $r): ?>
+                                    <option value="<?= htmlspecialchars($r['table_number']) ?>">Room <?= htmlspecialchars($r['table_number']) ?> <?= !empty($r['table_type']) ? '(' . htmlspecialchars($r['table_type']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
+                                </optgroup>
+                            <?php endif; ?>
                         </select>
                     </div>
                     <div class="mb-3">

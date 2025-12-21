@@ -1,0 +1,106 @@
+/* orders.css - Additional styles for orders page */
+.orders-container {
+    min-height: calc(100vh - 200px);
+}
+
+.orders-table {
+    font-size: 0.875rem;
+}
+
+.orders-table th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    color: #6c757d;
+}
+
+.orders-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+.status-badge {
+    min-width: 80px;
+    text-align: center;
+}
+
+.customer-info {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.items-preview {
+    max-width: 250px;
+}
+
+.actions-column {
+    min-width: 140px;
+}
+
+/* Pagination styles */
+.pagination .page-link {
+    color: #495057;
+    border: 1px solid #dee2e6;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+
+/* Filter styles */
+.filter-card {
+    background: linear-gradient(to right, #f8f9fa, #ffffff);
+    border-left: 4px solid #0d6efd;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .orders-table {
+        font-size: 0.8125rem;
+    }
+    
+    .actions-column {
+        min-width: 100px;
+    }
+    
+    .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+    
+    .customer-info {
+        max-width: 150px;
+    }
+}
+
+/* Animation for row updates */
+@keyframes highlight-row {
+    0% { background-color: #d1e7ff; }
+    100% { background-color: transparent; }
+}
+
+.row-updated {
+    animation: highlight-row 2s ease-out;
+}
+
+/* Print styles */
+@media print {
+    .card-header, .card-footer, .btn, .filter-card {
+        display: none !important;
+    }
+    
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    .table {
+        font-size: 12px !important;
+    }
+}

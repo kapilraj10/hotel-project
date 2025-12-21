@@ -741,12 +741,20 @@ function get_bookings_revenue($pdo, $date_condition = '', $status_condition = "s
       // Basic counts
       $total_categories = safe_count($pdo, 'categories');
       $total_items = safe_count($pdo, 'items');
-      $total_tables = safe_count($pdo, 'tables_info');
-      
-      // Rooms count
+
+      // Tables: count only entries in tables_info that are not rooms
+      $total_tables = 0;
+      if (table_exists($pdo, 'tables_info')) {
+        $total_tables = safe_count($pdo, 'tables_info', "COALESCE(is_room,0)=0");
+      }
+
+      // Rooms count: prefer a dedicated `rooms` table if present,
+      // otherwise count rows in `tables_info` where is_room=1
       $total_rooms = 0;
       if (table_exists($pdo, 'rooms')) {
         $total_rooms = safe_count($pdo, 'rooms');
+      } elseif (table_exists($pdo, 'tables_info')) {
+        $total_rooms = safe_count($pdo, 'tables_info', "COALESCE(is_room,0)=1");
       }
       
       // Order statistics

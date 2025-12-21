@@ -21,10 +21,16 @@ try { $pdo->exec("ALTER TABLE tables_info ADD COLUMN IF NOT EXISTS bed_type VARC
 try { $pdo->exec("ALTER TABLE tables_info ADD COLUMN IF NOT EXISTS is_room TINYINT(1) DEFAULT 0"); } catch (Throwable $__ignored) { try { $pdo->exec("ALTER TABLE tables_info ADD COLUMN is_room TINYINT(1) DEFAULT 0"); } catch (Throwable $__ignored2) {} }
 // Now fetch only room-backed entries (is_room = 1)
 try {
-  $rooms = $pdo->query('SELECT id, table_number, status, price, capacity, bed_type FROM tables_info WHERE COALESCE(is_room,0)=1 ORDER BY table_number')->fetchAll();
+  // Only show rooms that are marked as rooms, currently available, and public (not deleted).
+  $rooms = $pdo->query("SELECT id, table_number, status, price, capacity, bed_type FROM tables_info WHERE COALESCE(is_room,0)=1 AND (status = 'Available' OR status IS NULL) AND COALESCE(is_public,1)=1 ORDER BY table_number")->fetchAll();
 } catch (Throwable $e) {
-  // fallback if columns are not supported by the DB / older schema
+  // Fallback: older schema may not have is_room or status columns — try to at least filter by status if present.
+  try {
+  $rooms = $pdo->query("SELECT id, table_number, status, price FROM tables_info WHERE (status = 'Available' OR status IS NULL) AND COALESCE(is_public,1)=1 ORDER BY table_number")->fetchAll();
+  } catch (Throwable $__e) {
+    // Final fallback: return any rows (best-effort)
   $rooms = $pdo->query('SELECT id, table_number, status, price FROM tables_info ORDER BY table_number')->fetchAll();
+  }
 }
 $pre_room = isset($_GET['room_id']) ? (int)$_GET['room_id'] : 0;
 $errors = [];
@@ -97,11 +103,15 @@ $page_title = 'Add Booking'; include __DIR__ . '/admin_header.php';
   <div class="row">
     <div class="col-md-6 mb-2">
       <label class="form-label">Room</label>
-      <select name="room_id" id="roomSelect" class="form-select">
-        <?php foreach($rooms as $r): ?>
-          <option value="<?=$r['id']?>" data-price="<?=htmlspecialchars($r['price'] ?? 0)?>" data-capacity="<?=htmlspecialchars($r['capacity'] ?? 1)?>" data-bed="<?=htmlspecialchars($r['bed_type'] ?? '')?>" <?= ($pre_room && $pre_room===$r['id']) ? 'selected' : '' ?>><?=htmlspecialchars($r['table_number'])?> <?php if($r['status']!=='Available'): ?>(<?=$r['status']?>)<?php endif; ?></option>
-        <?php endforeach; ?>
-      </select>
+          <select name="room_id" id="roomSelect" class="form-select">
+            <?php if (empty($rooms)): ?>
+              <option value="">No available rooms</option>
+            <?php else: ?>
+              <?php foreach($rooms as $r): ?>
+                <option value="<?=$r['id']?>" data-price="<?=htmlspecialchars($r['price'] ?? 0)?>" data-capacity="<?=htmlspecialchars($r['capacity'] ?? 1)?>" data-bed="<?=htmlspecialchars($r['bed_type'] ?? '')?>" <?= ($pre_room && $pre_room===$r['id']) ? 'selected' : '' ?>><?=htmlspecialchars($r['table_number'])?> <?php if(!empty($r['status']) && $r['status']!=='Available'): ?>(<?=$r['status']?>)<?php endif; ?></option>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </select>
   <div class="mt-2"><small class="text-muted">Price per night: $<span id="adminPrice">0.00</span> — Calculated total: $<span id="adminTotal">0.00</span><br>Capacity: <span id="adminCapacity">-</span> &middot; Bed: <span id="adminBed">-</span></small></div>
     </div>
     <div class="col-md-6 mb-2"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
@@ -119,7 +129,15 @@ $page_title = 'Add Booking'; include __DIR__ . '/admin_header.php';
   // admin: show selected room price and calculate total based on dates
   function adminCalc(){
     const sel = document.getElementById('roomSelect');
+    if (!sel) return;
     const opt = sel.options[sel.selectedIndex];
+    if (!opt) {
+      document.getElementById('adminPrice').textContent = '0.00';
+      document.getElementById('adminCapacity').textContent = '-';
+      document.getElementById('adminBed').textContent = '-';
+      document.getElementById('adminTotal').textContent = '0.00';
+      return;
+    }
     const price = parseFloat(opt.dataset.price || 0);
     document.getElementById('adminPrice').textContent = price.toFixed(2);
     document.getElementById('adminCapacity').textContent = opt.dataset.capacity || '-';
@@ -134,9 +152,12 @@ $page_title = 'Add Booking'; include __DIR__ . '/admin_header.php';
     }
     document.getElementById('adminTotal').textContent = (price * nights).toFixed(2);
   }
-  document.getElementById('roomSelect').addEventListener('change', adminCalc);
-  document.querySelector('input[name="checkin"]').addEventListener('change', adminCalc);
-  document.querySelector('input[name="checkout"]').addEventListener('change', adminCalc);
+  const roomSelectEl = document.getElementById('roomSelect');
+  if (roomSelectEl) roomSelectEl.addEventListener('change', adminCalc);
+  const checkinEl = document.querySelector('input[name="checkin"]');
+  const checkoutEl = document.querySelector('input[name="checkout"]');
+  if (checkinEl) checkinEl.addEventListener('change', adminCalc);
+  if (checkoutEl) checkoutEl.addEventListener('change', adminCalc);
   // init
   adminCalc();
 </script>
